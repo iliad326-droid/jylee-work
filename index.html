@@ -1,4 +1,3 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -14,7 +13,7 @@
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:inherit}
 body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.6 "Noto Sans KR","Malgun Gothic",sans-serif}
-main{max-width:1280px;margin:0 auto;padding:20px 16px 56px}
+main{max-width:none;margin:0;padding:20px clamp(24px,4vw,72px) 56px}
 h1{font-size:21px;margin:0 0 12px}
 h2{font-size:16px;margin:22px 0 8px}
 .box{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:14px}
@@ -27,8 +26,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 button.sm{padding:3px 12px;font-size:13px}
 :focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 #msg{color:var(--sub)}#msg.err{color:var(--bad)}
-.app{display:flex;gap:16px;align-items:flex-start}
-nav{width:196px;flex:none;position:sticky;top:12px;display:flex;flex-direction:column;gap:4px}
+.app{display:flex;flex-direction:row-reverse;gap:16px;align-items:flex-start}#view{flex:1;min-width:0}
+nav{width:176px;flex:none;position:sticky;top:12px;display:flex;flex-direction:column;gap:4px}
 nav button{background:transparent;color:var(--ink);text-align:left;padding:9px 12px;border:1px solid transparent}
 nav button.on{background:var(--acc);color:var(--acc-ink)}
 nav button:not(.on):not(:disabled):hover{border-color:var(--line);background:var(--panel)}
@@ -98,7 +97,7 @@ if(AUTH.hash)document.documentElement.classList.add("locked");
 </div>
 <div class="app">
 <nav id="nav"></nav>
-<section id="view"><p class="hint">파일을 선택하고 분석 시작을 누르면 왼쪽 메뉴를 쓸 수 있습니다.</p></section>
+<section id="view"><p class="hint">파일을 선택하고 분석 시작을 누르면 오른쪽 메뉴를 쓸 수 있습니다.</p></section>
 </div>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -210,7 +209,7 @@ document.addEventListener("click",e=>{
 });
 
 /* 집계 도우미 */
-let A=null;const S={ltm:12,gk:"code",prev:null,pa:null,pb:null,pk:"",pk2:"",ps:null,pv:"O",oePre:"O",oeSel:[]};
+let A=null;const S={ltm:12,gk:"code",prev:null,pa:null,pb:null,pk:"",pk2:"",ps:null,pv:"O",oePre:"O",oeSel:[],oeGrp:[]};
 const kpi=a=>'<div class="kpi">'+a.map(x=>"<div><b>"+x[0]+"</b><span>"+esc(x[1])+"</span></div>").join("")+"</div>";
 const GC=h=>[{k:"k",h,l:1},{k:"n",h:"라인수",t:"n"},{k:"q",h:"현재고수량",t:"n"},{k:"a",h:"재고금액",t:"n"},{k:"p",h:"전체 대비",t:"p"}];
 function grpBy(key,rows){
@@ -381,15 +380,18 @@ function runPR(){
 function vOE(){
   const pre=(S.oePre||"O").toUpperCase(),oe=A.rows.filter(r=>r.code.startsWith(pre));
   const codes=grpBy("code",oe);S.oeSel=S.oeSel.filter(c=>codes.some(g=>g.k===c));
-  const sel=S.oeSel,rows=sel.length?oe.filter(r=>sel.includes(r.code)):oe;
+  const grps=[...new Set(oe.map(r=>r.grp||"(없음)"))].sort();S.oeGrp=S.oeGrp.filter(g=>grps.includes(g));const gs=S.oeGrp;
+  const sel=S.oeSel,rows=oe.filter(r=>(!sel.length||sel.includes(r.code))&&(!gs.length||gs.includes(r.grp||"(없음)")));
   const amt=rows.reduce((s,r)=>s+r.amt,0),oeT=oe.reduce((s,r)=>s+r.amt,0);
-  $("view").innerHTML='<div class="box row"><div><label for="oep">OE 파트 판정: ALOIS코드 시작 글자</label><input type="text" id="oep" value="'+esc(pre)+'" style="width:80px"></div><span class="hint">파트타입(ALOIS코드)을 눌러 필터링합니다. 선택이 없으면 전체입니다.</span></div><div class="chips">'+
+  $("view").innerHTML='<div class="box row"><div><label for="oep">OE 파트 판정: ALOIS코드 시작 글자</label><input type="text" id="oep" value="'+esc(pre)+'" style="width:80px"></div><span class="hint">파트타입(ALOIS코드)과 제품그룹을 눌러 필터링합니다(여러 개 선택 가능). 선택이 없으면 전체입니다.</span></div><div class="box"><label>제품그룹 <button class="ghost sm" data-ogc="1">선택 해제</button></label><div class="chips">'+grps.map(g=>'<button class="chip'+(gs.includes(g)?" on":"")+'" data-og="'+esc(g)+'">'+esc(g)+"</button>").join("")+'</div></div><div class="chips">'+
   (codes.length?codes.map(g=>'<button class="chip'+(sel.includes(g.k)?" on":"")+'" data-oe="'+esc(g.k)+'">'+esc(g.k)+" <small>"+fmt(g.n)+"라인 · "+fmt(g.a)+"</small></button>").join(""):'<span class="hint">해당하는 파트가 없습니다.</span>')+"</div>"+
-  kpi([[fmt(rows.length)+"라인 · "+fmt(amt)+"원","OE 파트"+(sel.length?" ("+esc(sel.join(", "))+")":" 전체")+" 재고금액"],[pct(A.total?amt/A.total:0),"전체 재고금액 대비"],[pct(oeT?amt/oeT:0),"OE 파트 전체 대비"]])+"<div id=t1></div>";
+  kpi([[fmt(rows.length)+"라인 · "+fmt(amt)+"원","OE 파트"+(sel.length?" ("+esc(sel.join(", "))+")":" 전체")+(gs.length?" · 제품그룹 "+esc(gs.join(", ")):"")+" 재고금액"],[pct(A.total?amt/A.total:0),"전체 재고금액 대비"],[pct(oeT?amt/oeT:0),"OE 파트 전체 대비"]])+"<div id=t1></div>";
   $("oep").onchange=e=>{S.oePre=e.target.value.trim()||"O";S.oeSel=[];vOE()};
   mt("t1",[C.pn,C.nm,C.wh,C.loc,C.code,C.qty,C.price,C.amt,C.p,C.ls],rows,300,"amt");
 }
 document.addEventListener("click",e=>{
+  const og=e.target.closest("[data-og],[data-ogc]");
+  if(og){if(og.dataset.ogc)S.oeGrp=[];else{const k=og.dataset.og,i=S.oeGrp.indexOf(k);if(i<0)S.oeGrp.push(k);else S.oeGrp.splice(i,1)}vOE();return}
   const c=e.target.closest("[data-oe]");if(!c)return;
   const k=c.dataset.oe,i=S.oeSel.indexOf(k);if(i<0)S.oeSel.push(k);else S.oeSel.splice(i,1);vOE();
 });
@@ -432,8 +434,18 @@ const bdTime=t=>{const d=new Date(t);return isNaN(d)?"":ds(d)+" "+String(d.getHo
 const bdErr=e=>{const c=e&&e.code;return c==="quota_exceeded"?"저장 공간이 가득 찼습니다. 오래된 글을 삭제해 주세요.":c==="invalid_argument"?"이 계정은 게시판에 글을 쓸 권한이 없습니다. (공유 설정에서 '기여자' 이상이어야 합니다)":c==="resource_exhausted"?"요청이 너무 빠릅니다. 잠시 후 다시 시도해 주세요.":"저장하지 못했습니다: "+((e&&e.message)||e)};
 async function initBoard(){
   try{
-    if(!(window.claude&&claude.use)){BD.loaded=true;return}
-    const r=await Promise.all([claude.use("db"),claude.use("user")]);
+    let r;
+    if(window.claude&&claude.use)r=await Promise.all([claude.use("db"),claude.use("user")]);
+    if(!r||!r[0]){/* claude.ai 밖(자체 도메인): 이 브라우저에만 저장되는 게시판 */
+      const K="localBoard",ld=()=>{try{return JSON.parse(localStorage.getItem(K))||{}}catch(e){return{}}},subs=[];
+      const snap=()=>{const o=ld();return{docs:Object.keys(o).map(id=>({id,data:()=>JSON.parse(JSON.stringify(o[id]))}))}};
+      const fire=()=>subs.forEach(f=>f(snap()));
+      BD.local=true;
+      r=[{collection:()=>({onSnapshot:cb=>{subs.push(cb);setTimeout(()=>cb(snap()),0);return()=>{}}}),
+        doc:p=>{const id=p.split("/")[1];return{get:async()=>{const o=ld();return{exists:id in o,data:()=>o[id]&&JSON.parse(JSON.stringify(o[id]))}},
+          set:async d=>{const o=ld();o[id]=d;try{localStorage.setItem(K,JSON.stringify(o))}catch(e){throw{code:"quota_exceeded"}}fire()}}}},
+        {id:async()=>"local",isOwner:async()=>true,profiles:async ids=>{const o={};ids.forEach(i=>o[i]={name:"나"});return o}}];
+    }
     BD.db=r[0];BD.user=r[1];
     if(BD.user){BD.uid=await BD.user.id();BD.owner=await BD.user.isOwner()}
     BD.loaded=true;
@@ -451,7 +463,7 @@ async function bdWrite(author,fn){
 function vBoard(){
   const can=!!(BD.db&&BD.uid);
   const note=!BD.loaded?"게시판을 불러오는 중입니다...":BD.err?BD.err:!BD.db?"이 화면에서는 게시판을 쓸 수 없습니다. claude.ai에서 로그인한 상태로 페이지를 열어 주세요.":!BD.uid?"로그인 정보를 확인하지 못해 글을 쓸 수 없습니다. 읽기만 가능합니다.":"";
-  $("view").innerHTML='<div class="box">'+(can?'<label for="bt">제목</label><input type="text" id="bt" maxlength="100" style="width:100%" value="'+esc(S.bdT||"")+'"><label for="bb" style="margin-top:8px">내용</label><textarea id="bb" rows="5" maxlength="5000">'+esc(S.bdB||"")+'</textarea><div class="row" style="margin-top:8px"><button id="bpost">글 올리기</button><span id="bmsg" class="hint"></span></div>':"")+(note?'<p class="hint" style="margin:0">'+esc(note)+"</p>":"")+'<p class="hint" style="margin:8px 0 0">회사 기밀이나 개인정보는 올리지 마세요. 글은 claude.ai의 이 페이지에 저장되며, 페이지를 공유한 사람에게만 보입니다.</p></div><div id="bl"></div>';
+  $("view").innerHTML='<div class="box">'+(can?'<label for="bt">제목</label><input type="text" id="bt" maxlength="100" style="width:100%" value="'+esc(S.bdT||"")+'"><label for="bb" style="margin-top:8px">내용</label><textarea id="bb" rows="5" maxlength="5000">'+esc(S.bdB||"")+'</textarea><div class="row" style="margin-top:8px"><button id="bpost">글 올리기</button><span id="bmsg" class="hint"></span></div>':"")+(note?'<p class="hint" style="margin:0">'+esc(note)+"</p>":"")+'<p class="hint" style="margin:8px 0 0">회사 기밀이나 개인정보는 올리지 마세요. 글은 저장되며, 페이지를 공유한 사람에게만 보입니다.</p>'+(BD.local?'<p class="hint" style="margin:6px 0 0">※ 이 주소에서는 글이 이 컴퓨터의 브라우저에만 저장되며 다른 사람과 공유되지 않습니다.</p>':"")+'</div><div id="bl"></div>';
   if(can){
     $("bt").oninput=e=>{S.bdT=e.target.value};$("bb").oninput=e=>{S.bdB=e.target.value};
     $("bpost").onclick=async()=>{
@@ -603,5 +615,3 @@ $("go").addEventListener("click",()=>{
 </script>
 </body>
 </html>
-
-</body></html>
