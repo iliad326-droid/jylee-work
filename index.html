@@ -80,13 +80,13 @@ if(AUTH.hash)document.documentElement.classList.add("locked");
 <body>
 <div id="gate"><form id="gf"><h1>로그인</h1><label for="gu">아이디</label><input type="text" id="gu" autocomplete="username"><label for="gp">비밀번호</label><input type="password" id="gp" autocomplete="current-password"><button type="submit" id="gb">로그인</button><p id="gm" class="hint" role="status" style="margin:10px 0 0"></p></form></div>
 <main>
-<div class="top"><h1>재고 분석</h1><span><button class="ghost" id="logout" hidden>로그아웃</button> <button class="ghost" id="setupbtn">로그인 설정</button></span></div>
+<div class="top"><h1>이재영 업무</h1><span><button class="ghost" id="logout" hidden>로그아웃</button> <button class="ghost" id="setupbtn">로그인 설정</button></span></div>
 <div class="box" id="setupbox" hidden>
 <p class="hint" style="margin:0 0 10px">아이디와 비밀번호를 정하면 이 페이지에 넣을 설정 한 줄을 만들어 줍니다. 비밀번호 자체는 어디에도 저장되지 않고, 변환된 값만 한 줄에 들어갑니다.</p>
 <div class="row"><div><label for="su">아이디</label><input type="text" id="su" autocomplete="off"></div><div><label for="sp">비밀번호</label><input type="password" id="sp" autocomplete="new-password"></div><button id="smk">설정 줄 만들기</button></div>
 <div id="sres" hidden style="margin-top:12px"><textarea id="sout" rows="3" readonly></textarea><div class="row" style="margin-top:8px"><button class="sm" id="scp">복사</button><span class="hint">HTML 파일을 메모장으로 열어 <b>const AUTH=</b> 로 시작하는 줄을 이 줄로 바꿔 저장한 뒤 도메인에 올리세요. 설정 후에는 아이디와 비밀번호를 모르면 열 수 없습니다.</span></div></div>
 </div>
-<div class="box">
+<div class="box" id="upbox">
 <div class="row">
 <div><label for="f">현재고리스트 엑셀</label><input type="file" id="f" accept=".xlsx,.xls,.csv"></div>
 <div><label for="codes">집중해서 볼 ALOIS코드</label><input type="text" id="codes" value="OA, OV"></div>
@@ -514,7 +514,85 @@ document.addEventListener("click",async e=>{
     drawBoard();
   }catch(x){const m=$("emsg")||$("bmsg");if(m)m.textContent=bdErr(x)}
 });
-const TABS=[["sum","요약",vSum],["oe","OE 파트",vOE],["pr","PR 파트 비교",vPR,1],["age","장기재고",vAge],["lim","재고 과부족",vLim],["cmp","전 파일 비교",vCmp],["grp","그룹별 집계",vGrp],["bop","B/O·P/O",vBop],["find","검색·정렬",vFind],["chart","차트",vChart],["board","게시판",vBoard,1]];
+
+/* ===== 부품 발주 매칭 (재고 분석과 무관) ===== */
+function mtRead(buf){
+  const wb=XLSX.read(buf,{type:"array",cellDates:true,cellFormula:false});
+  const sh={};
+  wb.SheetNames.forEach(n=>{const ws=wb.Sheets[n];if(!ws)return;fixRef(ws);
+    sh[n]=XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:true}).map(r=>r.map(c=>c instanceof Date?ds(c):(typeof c==="string"?c.replace(/ /g," ").trim():c)))});
+  return sh;
+}
+const mtPick=(names,re)=>names.find(n=>re.test(n))||"";
+function mtLoad(f){
+  const m=$("mtmsg");m.textContent=f.name+" 읽는 중...";
+  const r=new FileReader();
+  r.onload=()=>setTimeout(()=>{
+    try{const sh=mtRead(r.result),nm=Object.keys(sh);
+      S.mt={name:f.name,sh,g:mtPick(nm,/gis/i),d:mtPick(nm,/dms/i)};
+      if(!nm.length)throw new Error("시트를 찾지 못했습니다.");
+    }catch(x){S.mt=null;m.textContent="읽지 못했습니다: "+x.message;return}
+    vMatch();
+  },30);
+  r.readAsArrayBuffer(f);
+}
+function mtBuild(g,d){
+  const gh=["Type","","Sales Order","Purchase Order","Overall Status","Req. Date","Amount"];
+  const gr=(g||[]).filter(r=>String(r[2]).trim()!==""&&!isNaN(Number(String(r[2]).replace(/,/g,""))))
+    .map(r=>{const o=[];for(let i=0;i<7;i++)o.push(r[i]==null?"":r[i]);return o});
+  let hi=(d||[]).findIndex(r=>r.some(c=>String(c).trim()==="구매오더번호"));if(hi<0)hi=0;
+  const dhead=d&&d[hi]?d[hi].map(c=>String(c)):[];
+  let ki=dhead.indexOf("구매오더번호");if(ki<0)ki=1;
+  const dh=dhead.length?dhead:["구매등록일","구매오더번호","구매유형","구매오더상태","공급처","구매건수","구매총금액","비고"];
+  const dr=(d||[]).slice(hi+1).filter(r=>String(r[ki]).trim()!=="");
+  const gk=r=>String(r[3]).trim().toUpperCase(),dk=r=>String(r[ki]).trim().toUpperCase().replace(/^PO/,"");
+  const cmp=(a,b)=>String(b).localeCompare(String(a),"ko",{numeric:true}); // 큰 번호가 위
+  const dm=new Map();dr.forEach(r=>{const k=dk(r);if(!dm.has(k))dm.set(k,[]);dm.get(k).push(r)});
+  const pairs=[],gonly=[];
+  gr.forEach(r=>{const q=dm.get(gk(r));if(q&&q.length)pairs.push([r,q.shift()]);else gonly.push(r)});
+  const donly=[];dm.forEach(q=>q.forEach(r=>donly.push(r)));
+  pairs.sort((a,b)=>cmp(gk(a[0]),gk(b[0])));gonly.sort((a,b)=>cmp(gk(a),gk(b)));donly.sort((a,b)=>cmp(dk(a),dk(b)));
+  const keep=dh.map((h,i)=>i).filter(i=>dh[i]!=="공급처"),ai=dh.indexOf("구매총금액");
+  const dhead2=[];keep.forEach(i=>{dhead2.push(dh[i]);if(i===ai)dhead2.push("차액 (Amount−구매총금액)")});
+  if(ai<0)dhead2.push("차액 (Amount−구매총금액)");
+  const num=v=>{const n=Number(String(v).replace(/[^\d.\-]/g,""));return String(v).trim()===""||isNaN(n)?null:n};
+  const mapD=(r,g)=>{const o=[];const diff=g&&ai>=0&&num(g[6])!==null&&num(r[ai])!==null?num(g[6])-num(r[ai]):"";
+    keep.forEach(i=>{o.push(r[i]==null?"":r[i]);if(i===ai)o.push(diff)});if(ai<0)o.push("");return o};
+  const nd=dhead2.length,Lb=Array(7).fill(""),Rb=Array(nd).fill("");
+  const grid=[gh.concat([""],dhead2)];
+  pairs.forEach(p=>grid.push(p[0].concat([""],mapD(p[1],p[0]))));
+  const mat=pairs.length;
+  if(gonly.length||donly.length){
+    grid.push(Lb.concat([""],Rb),Lb.concat([""],Rb));
+    const n=Math.max(gonly.length,donly.length);
+    for(let i=0;i<n;i++){const L=gonly[i]||Lb,R=donly[i]?mapD(donly[i],null):Rb;grid.push(L.concat([""],R))}
+  }
+  const diffCol=7+1+dhead2.length-1-(ai<0?0:0);
+  const ti=dhead2.indexOf("구매유형")+8,nt=v=>String(v).replace(/^\s*\[[^\]]*\]\s*/,"").trim().toLowerCase();
+  const mism=new Set();for(let r=1;r<=mat;r++)if(nt(grid[r][0])!==nt(grid[r][ti]))mism.add(r);
+  return{mism,ti,diffIdx:dhead2.findIndex(h=>h.startsWith("차액"))+8,grid,mat,gonly:gonly.length,donly:donly.length,gt:gr.length,dt:dr.length,gcols:7};
+}
+const acc=v=>v===""?"":(v<0?"("+fmt(-v)+")":v===0?"-":fmt(v)+"&nbsp;");
+function vMatch(){
+  const M=S.mt,names=M?Object.keys(M.sh):[];
+  const sel=(id,v)=>'<select id="'+id+'"><option value="">(선택)</option>'+names.map(n=>"<option"+(n===v?" selected":"")+">"+esc(n)+"</option>").join("")+"</select>";
+  $("view").innerHTML='<div class="box row"><div><label for="mtf">엑셀 파일 (GIS 시트 + DMS 시트가 들어 있는 파일)</label><input type="file" id="mtf" accept=".xlsx,.xls,.xlsm"></div>'+
+   (M?'<div><label for="mtg">GIS 시트</label>'+sel("mtg",M.g)+'</div><div><label for="mtd">DMS 시트</label>'+sel("mtd",M.d)+"</div>":"")+
+   '<span id="mtmsg" class="hint">'+(M?esc(M.name):"재고 분석과 별개로, 파일은 이 브라우저 안에서만 처리됩니다.")+"</span></div><div id=mtres></div>";
+  $("mtf").onchange=e=>{if(e.target.files[0])mtLoad(e.target.files[0])};
+  if(!M)return;
+  $("mtg").onchange=e=>{M.g=e.target.value;vMatch()};$("mtd").onchange=e=>{M.d=e.target.value;vMatch()};
+  if(!M.g||!M.d){$("mtres").innerHTML='<p class="hint">GIS 시트와 DMS 시트를 선택해 주세요.</p>';return}
+  const R=mtBuild(M.sh[M.g],M.sh[M.d]);S.mtr=R;
+  const kp=kpi([[fmt(R.mat)+"건","양쪽에 모두 있음 (GIS "+fmt(R.gt)+" · DMS "+fmt(R.dt)+")"],[fmt(R.gonly)+"건","GIS에만 있음"],[fmt(R.donly)+"건","DMS에만 있음"]]);
+  const cell=(v,i)=>"<td class='l'>"+esc(v)+"</td>";
+  const body=R.grid.slice(1).map((r,ri)=>{const bad=R.mism.has(ri+1);const blank=r.every(c=>c==="");return"<tr"+(blank?' style="height:22px"':"")+">"+r.map((v,i)=>i===R.gcols?'<td style="padding:0;width:6px;background:#d6249f"></td>':i===R.diffIdx?"<td>"+acc(v)+"</td>":"<td class='l'"+(bad&&(i===0||i===R.ti)?' style="background:#ffe9a8;font-weight:600"':"")+">"+esc(v)+"</td>").join("")+"</tr>"}).join("");
+  const head="<tr>"+R.grid[0].map((v,i)=>i===R.gcols?"<th style='cursor:default;padding:0;width:6px;background:#d6249f'></th>":"<th class='l' style='cursor:default'>"+esc(v)+"</th>").join("")+"</tr>";
+  $("mtres").innerHTML=kp+'<p class="hint">같은 구매오더(GIS 열 D = DMS 구매오더번호에서 "PO" 제외)는 같은 줄에 나란히, 한쪽에만 있는 것은 두 줄 띄우고 아래쪽에 모았습니다.</p><div style="margin:8px 0"><button id="mtx">엑셀로 저장</button> <span class="hint">· Type과 구매유형이 서로 다른 건 <b style="background:#ffe9a8;padding:0 6px">노란색</b> ('+fmt(R.mism.size)+'건)</span></div><div class="wrap"><table><thead>'+head+"</thead><tbody>"+body+"</tbody></table></div>";
+  $("mtx").onclick=()=>{const ws=XLSX.utils.aoa_to_sheet(R.grid),wb=XLSX.utils.book_new();for(let r=1;r<R.grid.length;r++){const c=ws[XLSX.utils.encode_cell({r:r,c:R.diffIdx})];if(c&&typeof c.v==="number")c.z='#,##0_);(#,##0);"-"_)'}
+    XLSX.utils.book_append_sheet(wb,ws,"매칭");XLSX.writeFile(wb,"부품발주매칭.xlsx")};
+}
+const TABS=[["sum","요약",vSum],["oe","OE 파트",vOE],["pr","PR 파트 비교",vPR,1],["match","부품 발주 매칭",vMatch,1],["age","장기재고",vAge],["lim","재고 과부족",vLim],["cmp","전 파일 비교",vCmp],["grp","그룹별 집계",vGrp],["bop","B/O·P/O",vBop],["find","검색·정렬",vFind],["chart","차트",vChart],["board","게시판",vBoard,1]];
 let ready=false,curTab="",order=[];
 try{order=JSON.parse(localStorage.getItem("tabOrder")||"[]")}catch(e){}
 function renderNav(){
@@ -527,6 +605,7 @@ function renderNav(){
 }
 function openTab(id){
   curTab=id;renderNav();
+  $("upbox").hidden=(id==="pr"||id==="match");
   const t=TABS.find(x=>x[0]===id);
   if(!t[3]&&need())return;
   try{t[2]()}catch(e){$("view").innerHTML='<p class="hint" style="color:var(--bad)">표시하지 못했습니다: '+esc(e.message)+"</p>"}
